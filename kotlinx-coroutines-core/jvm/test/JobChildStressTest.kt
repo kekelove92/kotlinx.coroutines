@@ -26,6 +26,7 @@ class JobChildStressTest : TestBase() {
     fun testChild() = runTest {
         val barrier = CyclicBarrier(3)
         repeat(N_ITERATIONS) {
+            println("Iteration $it")
             var wasLaunched = false
             var unhandledException: Throwable? = null
             val handler = CoroutineExceptionHandler { _, ex ->
@@ -50,11 +51,25 @@ class JobChildStressTest : TestBase() {
             }
             barrier.await()
             joinAll(launcher, canceller, parent)
-            assertNull(unhandledException)
-            if (wasLaunched) {
-                val exception = parent.getCompletionExceptionOrNull()
-                assertTrue(exception is TestException, "exception=$exception")
-            }
+            assertNull(unhandledException, "wasLaunched = $wasLaunched")
+//            if (wasLaunched) {
+//                val exception = parent.getCompletionExceptionOrNull()
+//                assertTrue(exception is TestException, "exception=$exception")
+//            }
         }
+    }
+
+    @Test
+    fun easyTest() = runTest {
+        val parent = CompletableDeferred<Unit>()
+        var unhandledException: Throwable? = null
+        val handler = CoroutineExceptionHandler { _, ex ->
+            unhandledException = ex
+        }
+        val canceller = launch {
+            parent.cancel()
+        }
+        joinAll(canceller, parent)
+        assertNull(unhandledException)
     }
 }

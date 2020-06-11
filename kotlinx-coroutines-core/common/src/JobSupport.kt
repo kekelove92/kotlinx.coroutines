@@ -460,7 +460,9 @@ public open class JobSupport constructor(active: Boolean) : Job, ChildJob, Paren
                     if (state.isActive) {
                         // try move to SINGLE state
                         val node = nodeCache ?: makeNode(handler, onCancelling).also { nodeCache = it }
-                        if (_state.compareAndSet(state, node)) return node
+                        if (_state.compareAndSet(state, node)) {
+                            return node
+                        }
                     } else
                         promoteEmptyToNodeList(state) // that way we can add listener for non-active coroutine
                 }
@@ -493,15 +495,19 @@ public open class JobSupport constructor(active: Boolean) : Job, ChildJob, Paren
                             if (invokeImmediately) handler.invokeIt(rootCause)
                             return handle
                         } else {
-                            val node = nodeCache ?: makeNode(handler, onCancelling).also { nodeCache = it }
-                            if (addLastAtomic(state, list, node)) return node
+                            kotlinx.coroutines.internal.synchronized(state) {
+                                val node = nodeCache ?: makeNode(handler, onCancelling).also { nodeCache = it }
+                                if (addLastAtomic(state, list, node)) return node
+                            }
                         }
                     }
                 }
                 else -> { // is complete
                     // :KLUDGE: We have to invoke a handler in platform-specific way via `invokeIt` extension,
                     // because we play type tricks on Kotlin/JS and handler is not necessarily a function there
-                    if (invokeImmediately) handler.invokeIt((state as? CompletedExceptionally)?.cause)
+                    if (invokeImmediately) {
+                        handler.invokeIt((state as? CompletedExceptionally)?.cause)
+                    }
                     return NonDisposableHandle
                 }
             }
@@ -517,8 +523,12 @@ public open class JobSupport constructor(active: Boolean) : Job, ChildJob, Paren
                 ?: InvokeOnCompletion(this, handler)
     }
 
-    private fun addLastAtomic(expect: Any, list: NodeList, node: JobNode<*>) =
-        list.addLastIf(node) { this.state === expect }
+    private fun addLastAtomic(expect: Any, list: NodeList, node: JobNode<*>): Boolean {
+        list.addLast(node)
+        if (this.state === expect) return true
+        node.dispose()
+        return false
+    }
 
     private fun promoteEmptyToNodeList(state: Empty) {
         // try to promote it to LIST state with the corresponding state
@@ -768,16 +778,16 @@ public open class JobSupport constructor(active: Boolean) : Job, ChildJob, Paren
     // Performs promotion of incomplete coroutine state to NodeList for the purpose of
     // converting coroutine state to Cancelling, returns null when need to retry
     private fun getOrPromoteCancellingList(state: Incomplete): NodeList? = state.list ?:
-        when (state) {
-            is Empty -> NodeList() // we can allocate new empty list that'll get integrated into Cancelling state
-            is JobNode<*> -> {
-                // SINGLE/SINGLE+ must be promoted to NodeList first, because otherwise we cannot
-                // correctly capture a reference to it
-                promoteSingleToNodeList(state)
-                null // retry
-            }
-            else -> error("State should have list: $state")
+    when (state) {
+        is Empty -> NodeList() // we can allocate new empty list that'll get integrated into Cancelling state
+        is JobNode<*> -> {
+            // SINGLE/SINGLE+ must be promoted to NodeList first, because otherwise we cannot
+            // correctly capture a reference to it
+            promoteSingleToNodeList(state)
+            null // retry
         }
+        else -> error("State should have list: $state")
+    }
 
     // try make new Cancelling state on the condition that we're still in the expected state
     private fun tryMakeCancelling(state: Incomplete, rootCause: Throwable): Boolean {
@@ -811,7 +821,7 @@ public open class JobSupport constructor(active: Boolean) : Job, ChildJob, Paren
                 }
             }
         }
-    } 
+    }
 
     /**
      * Completes this job. Used by [AbstractCoroutine.resume].
@@ -1349,7 +1359,9 @@ internal abstract class JobNode<out J : Job>(
 ) : CompletionHandlerBase(), DisposableHandle, Incomplete {
     override val isActive: Boolean get() = true
     override val list: NodeList? get() = null
-    override fun dispose() = (job as JobSupport).removeNode(this)
+    override fun dispose() {
+        (job as JobSupport).removeNode(this)
+    }
 }
 
 internal class NodeList : LockFreeLinkedListHead(), Incomplete {
@@ -1383,6 +1395,7 @@ private class InvokeOnCompletion(
     job: Job,
     private val handler: CompletionHandler
 ) : JobNode<Job>(job)  {
+    //private val _invoked = atomic(false)
     override fun invoke(cause: Throwable?) = handler.invoke(cause)
     override fun toString() = "InvokeOnCompletion[$classSimpleName@$hexAddress]"
 }
@@ -1459,9 +1472,11 @@ private class InvokeOnCancelling(
     private val handler: CompletionHandler
 ) : JobCancellingNode<Job>(job)  {
     // delegate handler shall be invoked at most once, so here is an additional flag
-    private val _invoked = atomic(0) // todo: replace with atomic boolean after migration to recent atomicFu
+    private val _invoked = atomic(false)
     override fun invoke(cause: Throwable?) {
-        if (_invoked.compareAndSet(0, 1)) handler.invoke(cause)
+        if (_invoked.compareAndSet(false, true)) {
+            handler.invoke(cause)
+        }
     }
     override fun toString() = "InvokeOnCancelling[$classSimpleName@$hexAddress]"
 }

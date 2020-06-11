@@ -50,6 +50,25 @@ class AbstractCoroutineTest : TestBase() {
     }
 
     @Test
+    fun easyChildNodesTest() = runTest {
+        val job = launch {
+            println("Coroutine start")
+            launch {
+                println("Child coroutine start")
+                //try {
+                    delay(100)
+                //} catch (e: CancellationException) {
+//                    println("Child coroutine cancelled: $e")
+//                    throw e
+//                }
+            }
+        }
+        delay(10)
+        job.join()
+        println("Done")
+    }
+
+    @Test
     fun testNotificationsWithException() = runTest {
         expect(1)
         val coroutineContext = coroutineContext // workaround for KT-22984
