@@ -10,7 +10,7 @@ import kotlin.math.*
 import kotlin.test.*
 
 /**
- * A _behavioral_ test for buffering that is introduced by [buffer] operator to test that it is
+ * A _behavioral_ test for the buffering that is introduced by the [buffer] operator to test that it is
  * implemented properly and that adjacent [buffer] calls are fused properly.
  */
 class BufferTest : TestBase() {
@@ -185,4 +185,3 @@ class BufferTest : TestBase() {
         assertEquals(listOf(1, 2), result)
     }
 }
-

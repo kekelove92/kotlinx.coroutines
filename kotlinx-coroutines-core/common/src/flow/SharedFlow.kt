@@ -155,7 +155,7 @@ public interface MutableSharedFlow<T> : SharedFlow<T>, FlowCollector<T> {
      * The number of subscribers (active collectors) to this shared flow.
      *
      * This state can be used to react to changes in the number of subscriptions to this shared flow.
-     * For example, if you need to call `onActive` function when the first subscriber appears and `onInactive`
+     * For example, if you need to call the `onActive` function when the first subscriber appears and the `onInactive`
      * function when the last one disappears, you can set it up like this:
      *
      * ```
